@@ -159,11 +159,16 @@ class _QuizPageState extends State<QuizPage> {
   int _a = 2;
   int _b = 2;
   bool _revealed = false;
-  final _rnd = Random();
+  // Precomputed pairs and iterator index
+  final List<Map<String, int>> _pairs = [];
+  int _currentIndex = 0;
+  // Use a secure RNG for unpredictable shuffling
+  final Random _secureRnd = Random.secure();
 
   @override
   void initState() {
     super.initState();
+    _generatePairsAndShuffle();
     _nextPair();
   }
 
@@ -191,18 +196,69 @@ class _QuizPageState extends State<QuizPage> {
     });
   }
 
-  void _nextPair() {
-    // Choose A between 2 and 9 inclusive
-    final a = 2 + _rnd.nextInt(8); // 0..7 -> 2..9
+  void _generatePairsAndShuffle() {
+    _pairs.clear();
     final min = widget.rangeMin;
     final max = widget.rangeMax;
-    final span = max - min + 1;
-    final b = min + _rnd.nextInt(span);
+    for (var a = 2; a <= 9; a++) {
+      for (var b = min; b <= max; b++) {
+        _pairs.add({'a': a, 'b': b});
+      }
+    }
+    // Fisher-Yates shuffle using secure RNG
+    for (var i = _pairs.length - 1; i > 0; i--) {
+      final j = _secureRnd.nextInt(i + 1);
+      final tmp = _pairs[i];
+      _pairs[i] = _pairs[j];
+      _pairs[j] = tmp;
+    }
+    _currentIndex = 0;
+  }
+
+  void _nextPair() {
+    // If we've exhausted all precomputed pairs, show All Done
+    if (_currentIndex >= _pairs.length) {
+      _showAllDoneDialog();
+      return;
+    }
+
+    final pair = _pairs[_currentIndex];
+    _currentIndex++;
     setState(() {
-      _a = a;
-      _b = b;
+      _a = pair['a']!;
+      _b = pair['b']!;
     });
     _startTimer();
+  }
+
+  Future<void> _showAllDoneDialog() async {
+    _timer?.cancel();
+    final restart = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('All Done'),
+        content: const Text('You have completed all combinations. Restart?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Back to Settings'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Restart'),
+          ),
+        ],
+      ),
+    );
+
+    if (!mounted) return;
+    if (restart == true) {
+      _generatePairsAndShuffle();
+      _nextPair();
+    } else {
+      Navigator.of(context).pop();
+    }
   }
 
   @override
@@ -260,6 +316,16 @@ class _QuizPageState extends State<QuizPage> {
                 Navigator.of(context).pop();
               },
               child: const Text('Back to Settings'),
+            ),
+            const SizedBox(height: 16),
+            // Progress bar at the bottom showing completion progress
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 0.0),
+              child: LinearProgressIndicator(
+                value: _pairs.isNotEmpty ? (_currentIndex / _pairs.length) : 0.0,
+                minHeight: 8,
+                semanticsLabel: 'Progress',
+              ),
             ),
           ],
         ),
