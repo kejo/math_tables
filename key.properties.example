@@ -1,0 +1,13 @@
+# Example key.properties
+# Copy this file to `key.properties` (same folder) and fill in the real values.
+# Do NOT commit the real `key.properties` to version control.
+
+# Example on Windows (escape backslashes or use forward slashes):
+# storeFile=C:\Users\ketan\keystore\release_key.jks
+# Example on macOS/Linux:
+# storeFile=/home/ketan/keystore/release_key.jks
+
+storePassword=yourStorePassword
+keyPassword=yourKeyPassword
+keyAlias=release_key
+storeFile=/full/path/to/your/release_key.jks

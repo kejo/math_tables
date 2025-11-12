@@ -43,3 +43,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Keystore properties (contains passwords and keystore paths) - do NOT commit
+key.properties
+android/key.properties
