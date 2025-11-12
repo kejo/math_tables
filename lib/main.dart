@@ -153,8 +153,160 @@ class QuizPage extends StatefulWidget {
   State<QuizPage> createState() => _QuizPageState();
 }
 
+/// Neon ring widget that shows either the remaining seconds as a progress ring
+/// or the revealed numeric answer in a neon style. It includes a subtle
+/// pulsing animation when revealed and announces the number for accessibility.
+class NeonRing extends StatefulWidget {
+  final int answer;
+  final bool revealed;
+  final int remaining;
+  final int timeLimit;
+  final VoidCallback? onTap;
+
+  const NeonRing({super.key, required this.answer, required this.revealed, required this.remaining, required this.timeLimit, this.onTap});
+
+  @override
+  State<NeonRing> createState() => _NeonRingState();
+}
+
+class _NeonRingState extends State<NeonRing> with SingleTickerProviderStateMixin {
+  late final AnimationController _pulseController;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(vsync: this, duration: const Duration(milliseconds: 800), lowerBound: 0.96, upperBound: 1.04)
+      ..addListener(() {
+        if (mounted) setState(() {});
+      });
+    if (widget.revealed) _pulseController.repeat(reverse: true);
+  }
+
+  @override
+  void didUpdateWidget(covariant NeonRing oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.revealed && !_pulseController.isAnimating) {
+      _pulseController.repeat(reverse: true);
+    } else if (!widget.revealed && _pulseController.isAnimating) {
+      _pulseController.stop();
+    }
+    // Ensure UI updates when remaining changes are driven externally
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Use LayoutBuilder to make the ring responsive to available height
+    return LayoutBuilder(builder: (context, constraints) {
+      final screenWidth = MediaQuery.of(context).size.width;
+      // If height constraint is finite, cap ring by a fraction of available height
+      final availableHeight = constraints.maxHeight.isFinite ? constraints.maxHeight : MediaQuery.of(context).size.height;
+      // Choose the smaller of width-based and height-based sizes, then clamp
+      final candidateByWidth = screenWidth * 0.72;
+      final candidateByHeight = availableHeight * 0.56; // use ~56% of available height
+      final rawSize = (candidateByWidth < candidateByHeight) ? candidateByWidth : candidateByHeight;
+      final size = rawSize.clamp(120.0, 320.0);
+      final fraction = widget.timeLimit > 0 ? (widget.remaining / widget.timeLimit).clamp(0.0, 1.0) : 0.0;
+
+      // Colors tuned for a deep purple primary theme with neon accent
+      final neon = const Color(0xFF7E57C2); // soft neon purple
+      final ringBg = neon.withAlpha((0.12 * 255).round());
+
+      return Semantics(
+        container: true,
+        button: true,
+        label: widget.revealed ? 'Answer ${widget.answer}. Tap to go to next question.' : 'Time left ${widget.remaining} seconds. Tap to reveal answer.',
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: widget.onTap,
+          child: SizedBox(
+            width: size,
+            height: size,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                // Soft circular background
+                Container(
+                  width: size,
+                  height: size,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).brightness == Brightness.dark ? Colors.black : Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(color: neon.withAlpha((0.12 * 255).round()), blurRadius: 24, spreadRadius: 2),
+                    ],
+                  ),
+                ),
+
+                // Animated progress ring (when not revealed)
+                if (!widget.revealed)
+                  SizedBox(
+                    width: size * 0.92,
+                    height: size * 0.92,
+                    child: TweenAnimationBuilder<double>(
+                      tween: Tween(begin: fraction, end: fraction),
+                      duration: const Duration(milliseconds: 300),
+                      builder: (context, value, child) {
+                        return CircularProgressIndicator(
+                          value: value,
+                          strokeWidth: size * 0.095,
+                          valueColor: AlwaysStoppedAnimation<Color>(neon),
+                          backgroundColor: ringBg,
+                        );
+                      },
+                    ),
+                  ),
+
+                // Inner glowing circle to add neon effect
+                Container(
+                  width: widget.revealed ? size * 0.78 : size * 0.64,
+                  height: widget.revealed ? size * 0.78 : size * 0.64,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: widget.revealed ? neon.withAlpha((0.06 * 255).round()) : neon.withAlpha((0.02 * 255).round()),
+                    boxShadow: widget.revealed
+                        ? [BoxShadow(color: neon.withAlpha((0.28 * 255).round()), blurRadius: 36, spreadRadius: 6)]
+                        : [BoxShadow(color: neon.withAlpha((0.06 * 255).round()), blurRadius: 12)],
+                  ),
+                ),
+
+                // Center text: remaining seconds or revealed answer
+                Transform.scale(
+                  scale: widget.revealed ? (1.0 + (_pulseController.value - 1.0) * 0.04) : 1.0,
+                  child: AnimatedDefaultTextStyle(
+                    duration: const Duration(milliseconds: 250),
+                    style: TextStyle(
+                      fontSize: widget.revealed ? (size * 0.28) : (size * 0.18),
+                      fontWeight: FontWeight.w800,
+                      color: widget.revealed ? neon : Theme.of(context).colorScheme.primary,
+                      shadows: [
+                        Shadow(color: neon.withAlpha(((widget.revealed ? 0.9 : 0.5) * 255).round()), blurRadius: widget.revealed ? 28 : 8),
+                        const Shadow(color: Colors.white, blurRadius: 2),
+                      ],
+                    ),
+                    child: Text(
+                      widget.revealed ? '${widget.answer}' : '${widget.remaining}',
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    });
+  }
+}
+
 class _QuizPageState extends State<QuizPage> {
   Timer? _timer;
+  Timer? _autoNextTimer;
   late int _remaining = widget.timeLimitSeconds;
   int _a = 2;
   int _b = 2;
@@ -175,11 +327,13 @@ class _QuizPageState extends State<QuizPage> {
   @override
   void dispose() {
     _timer?.cancel();
+    _autoNextTimer?.cancel();
     super.dispose();
   }
 
   void _startTimer() {
     _timer?.cancel();
+    _autoNextTimer?.cancel();
     setState(() {
       _remaining = widget.timeLimitSeconds;
       _revealed = false;
@@ -191,6 +345,12 @@ class _QuizPageState extends State<QuizPage> {
         if (_remaining <= 0) {
           _revealed = true;
           _timer?.cancel();
+          // schedule auto-next the same way a user-triggered reveal does
+          _autoNextTimer?.cancel();
+          _autoNextTimer = Timer(const Duration(seconds: 5), () {
+            if (!mounted) return;
+            _nextPair();
+          });
         }
       });
     });
@@ -215,12 +375,16 @@ class _QuizPageState extends State<QuizPage> {
     _currentIndex = 0;
   }
 
+
+
   void _nextPair() {
     // If we've exhausted all precomputed pairs, show All Done
     if (_currentIndex >= _pairs.length) {
       _showAllDoneDialog();
       return;
     }
+    // cancel any pending auto-next timer when moving to next pair
+    _autoNextTimer?.cancel();
 
     final pair = _pairs[_currentIndex];
     _currentIndex++;
@@ -281,35 +445,31 @@ class _QuizPageState extends State<QuizPage> {
             ),
             const SizedBox(height: 24),
             Center(
-              child: Text(_revealed ? 'Answer: $product' : 'Time left: $_remaining s', style: const TextStyle(fontSize: 20)),
+              child: NeonRing(
+                answer: product,
+                revealed: _revealed,
+                remaining: _remaining,
+                timeLimit: widget.timeLimitSeconds,
+                onTap: () {
+                  if (!_revealed) {
+                    _timer?.cancel();
+                    setState(() => _revealed = true);
+
+                    _autoNextTimer?.cancel();
+                    _autoNextTimer = Timer(const Duration(seconds: 5), () {
+                      if (!mounted) return;
+                      _nextPair();
+                    });
+                  } else {
+                    _autoNextTimer?.cancel();
+                    _timer?.cancel();
+                    _nextPair();
+                  }
+                },
+              ),
             ),
             const Spacer(),
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () {
-                      // instant reveal
-                      _timer?.cancel();
-                      setState(() {
-                        _revealed = true;
-                      });
-                    },
-                    child: const Text('Reveal'),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () {
-                      _timer?.cancel();
-                      _nextPair();
-                    },
-                    child: const Text('Next'),
-                  ),
-                ),
-              ],
-            ),
+            // Neon ring is the primary control now (tappable) — control is rendered above.
             const SizedBox(height: 12),
             TextButton(
               onPressed: () {

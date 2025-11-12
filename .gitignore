@@ -49,3 +49,4 @@ key.properties
 android/key.properties
 **/*.jks
 keystores/
+keystore.b64
