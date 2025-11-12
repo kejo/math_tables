@@ -47,3 +47,5 @@ app.*.map.json
 # Keystore properties (contains passwords and keystore paths) - do NOT commit
 key.properties
 android/key.properties
+**/*.jks
+keystores/

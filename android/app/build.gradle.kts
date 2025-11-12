@@ -6,10 +6,18 @@ plugins {
 }
 
 import java.util.Properties
+import java.io.File
 import org.gradle.api.GradleException
 
 // Load signing properties from key.properties (optional, not checked in)
-val keystorePropertiesFile = rootProject.file("key.properties")
+// Try multiple locations: Android root (rootProject), repo root (parent of Android root), and module parent.
+val possibleKeyFiles = listOf(
+    rootProject.file("key.properties"),
+    rootProject.projectDir.parentFile?.let { File(it, "key.properties") },
+    project.file("../key.properties")
+).filterNotNull()
+
+val keystorePropertiesFile = possibleKeyFiles.firstOrNull { it.exists() } ?: rootProject.file("key.properties")
 val keystoreProperties = Properties()
 if (keystorePropertiesFile.exists()) {
     keystorePropertiesFile.inputStream().use { fis ->
